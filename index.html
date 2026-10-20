@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>3D Birthday Card for Han</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{overflow:hidden;background:#080503;font-family:Arial,sans-serif;color:#fff}
+#canvas-container{width:100vw;height:100vh}
+#video{position:absolute;top:10px;left:10px;width:160px;height:120px;opacity:0.15;border-radius:8px;z-index:10}
+#tip{position:absolute;top:16px;left:50%;transform:translateX(-50%);z-index:20;font-size:14px;color:#ffddaa;text-shadow:0 0 8px #ff9944;pointer-events:none}
+</style>
+</head>
+<body>
+<div id="canvas-container"></div>
+<video id="video" autoplay playsinline></video>
+<div id="tip">Open your palm to open card | Close fist to close card</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/js/postprocessing/EffectComposer.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/js/postprocessing/RenderPass.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/js/controls/OrbitControls.js"></script>
+
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+
+<script>
+// ===================== 基础设置 =====================
+let scene, camera, renderer, composer, bloomPass;
+let controls;
+let cardGroup, cardFront, cardBack;
+let openProgress = 0; // 0闭合 ~ 1打开
+let targetOpen = 0;
+let ribbonPool = [];
+let audio = null;
+let audioPlayed = false;
+
+// ===================== 初始化场景 =====================
+function initThree(){
+    scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x070402);
+
+    camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 200);
+    camera.position.set(0, 0, 4.2);
+
+    renderer = new THREE.WebGLRenderer({antialias:true});
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
+    renderer.shadowMap.enabled = true;
+    document.getElementById('canvas-container').appendChild(renderer.domElement);
+
+    controls = new THREE.OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+    controls.minDistance = 2.2;
+    controls.maxDistance = 7;
+
+    // 灯光
+    const ambientLight = new THREE.AmbientLight(0xffddbb, 0.4);
+    scene.add(ambientLight);
+    const candleLight = new THREE.PointLight(0xff9944, 1.2, 12);
+    candleLight.position.set(0,1.2,1);
+    scene.add(candleLight);
+
+    // 辉光后处理
+    const renderPass = new THREE.RenderPass(scene, camera);
+    bloomPass = new THREE.UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.1, 0.45, 0.75);
+    composer = new THREE.EffectComposer(renderer);
+    composer.addPass(renderPass);
+    composer.addPass(bloomPass);
+
+    buildCard();
+    buildCakeOnCover();
+    buildText();
+    createRibbonPool(40);
+
+    window.addEventListener('resize', onResize);
+}
+
+// ===================== 贺卡模型 =====================
+function buildCard(){
+    cardGroup = new THREE.Group();
+    scene.add(cardGroup);
+
+    const cardW = 2.2;
+    const cardH = 1.6;
+    const thick = 0.04;
+    const matFront = new THREE.MeshStandardMaterial({color:0xffe8ee, roughness:0.8, metalness:0});
+    const matBack = new THREE.MeshStandardMaterial({color:0xfff3f7, roughness:0.8, metalness:0});
+
+    cardFront = new THREE.Mesh(new THREE.BoxGeometry(cardW, cardH, thick), matFront);
+    cardBack = new THREE.Mesh(new THREE.BoxGeometry(cardW, cardH, thick), matBack);
+
+    // 铰链在底边
+    cardFront.position.y = cardH / 2;
+    cardBack.position.y = -cardH / 2;
+    cardGroup.add(cardFront, cardBack);
+}
+
+// 贺卡封面蛋糕
+function buildCakeOnCover(){
+    const cakeGroup = new THREE.Group();
+    cakeGroup.position.set(0,0.4,0.03);
+    cardFront.add(cakeGroup);
+
+    // 底层蛋糕
+    const cake1 = new THREE.Mesh(new THREE.CylinderGeometry(0.35,0.35,0.22,16), new THREE.MeshStandardMaterial({color:0xffc888}));
+    cake1.position.y = 0.11;
+    cakeGroup.add(cake1);
+    // 上层
+    const cake2 = new THREE.Mesh(new THREE.CylinderGeometry(0.24,0.24,0.18,16), new THREE.MeshStandardMaterial({color:0xffb877}));
+    cake2.position.y = 0.31;
+    cakeGroup.add(cake2);
+    // 蜡烛
+    for(let i=0;i<4;i++){
+        const deg = i * Math.PI / 2;
+        const cx = Math.cos(deg)*0.14;
+        const cz = Math.sin(deg)*0.14;
+        const candle = new THREE.Mesh(new THREE.CylinderGeometry(0.022,0.022,0.25,8), new THREE.MeshStandardMaterial({color:0xff5577}));
+        candle.position.set(cx,0.52,cz);
+        cakeGroup.add(candle);
+        const flame = new THREE.Mesh(new THREE.SphereGeometry(0.04,8,6), new THREE.MeshStandardMaterial({color:0xffdd44, emissive:0xffaa22, emissiveIntensity:1.8}));
+        flame.position.set(cx,0.67,cz);
+        cakeGroup.add(flame);
+    }
+}
+
+// 贺卡内文字（贴图文字）
+function buildText(){
+    // Dear Han, Happy Birthday! + blessing
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    canvas.width = 1024; canvas.height = 768;
+    ctx.fillStyle = '#fff7fa';
+    ctx.fillRect(0,0,1024,768);
+    ctx.fillStyle = '#bb3355';
+    ctx.font = 'bold 72px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('Dear Han,', 512, 260);
+    ctx.fillText('Happy Birthday!', 512, 360);
+    ctx.font = '36px Arial';
+    ctx.fillText('May all your wishes come true.', 512, 480);
+    ctx.fillText('Stay happy and shine bright ✨', 512, 540);
+
+    const tex = new THREE.CanvasTexture(canvas);
+    const textMat = new THREE.MeshStandardMaterial({map:tex, side:THREE.DoubleSide, roughness:0.9});
+    const textGeo = new THREE.PlaneGeometry(2.0,1.4);
+    const textMesh = new THREE.Mesh(textGeo, textMat);
+    textMesh.position.set(0, -0.4, 0.05);
+    cardBack.add(textMesh);
+}
+
+// 爱心彩带粒子池
+function createRibbonPool(count){
+    const heartShape = new THREE.Shape();
+    heartShape.moveTo(0,0.12);
+    heartShape.bezierCurveTo(0.12,0.24, 0.24,0.12, 0.12,0);
+    heartShape.bezierCurveTo(0,-0.12, 0,-0.06, 0,0);
+    heartShape.bezierCurveTo(0,-0.06, -0.12,-0.12, -0.12,0);
+    heartShape.bezierCurveTo(-0.24,0.12, -0.12,0.24, 0,0.12);
+    const heartGeo = new THREE.ShapeGeometry(heartShape);
+    const colors = [0xff4477,0xffbb33,0x44ddff,0x77ff88,0xaa77ff];
+
+    for(let i=0;i<count;i++){
+        const mat = new THREE.MeshStandardMaterial({color:colors[i%colors.length], side:THREE.DoubleSide, emissive:0xffffff, emissiveIntensity:0.2});
+        const mesh = new THREE.Mesh(heartGeo, mat);
+        mesh.visible = false;
+        mesh.userData = {vx:0,vy:0,vz:0,life:0};
+        scene.add(mesh);
+        ribbonPool.push(mesh);
+    }
+}
+
+function burstRibbons(){
+    ribbonPool.forEach(h=>{
+        h.visible = true;
+        h.position.set(0,0,0.4);
+        h.userData.vx = (Math.random()-0.5)*0.14;
+        h.userData.vy = Math.random()*0.12 + 0.06;
+        h.userData.vz = (Math.random()-0.5)*0.14;
+        h.userData.life = 1;
+    })
+    if(!audioPlayed && audio){
+        audio.play().catch(e=>{});
+        audioPlayed = true;
+    }
+}
+
+function updateRibbons(dt){
+    ribbonPool.forEach(h=>{
+        if(!h.visible) return;
+        h.userData.life -= dt * 0.85;
+        if(h.userData.life <=0){
+            h.visible = false;
+            return;
+        }
+        h.position.x += h.userData.vx;
+        h.position.y += h.userData.vy;
+        h.position.z += h.userData.vz;
+        h.rotation.x += 0.06;
+        h.rotation.y += 0.08;
+        h.userData.vy -= 0.0025;
+        h.material.opacity = h.userData.life;
+        h.material.transparent = true;
+    })
+}
+
+// ===================== MediaPipe Hands =====================
+let hands;
+let lastOpenState = false;
+async function initHandPose(){
+    const videoEl = document.getElementById('video');
+    hands = new Hands({locateFile: file=>`https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
+    hands.setOptions({
+        maxNumHands:1,
+        modelComplexity:1,
+        minDetectionConfidence:0.7,
+        minTrackingConfidence:0.7
+    });
+    hands.onResults(onHandResult);
+
+    const camera = new Camera(videoEl, {
+        onFrame: async ()=> await hands.send({image:videoEl}),
+        width:640, height:480
+    });
+    camera.start();
+}
+
+// 判断手掌张开：对比指尖和掌根距离
+function onHandResult(results){
+    if(!results.multiHandLandmarks || results.multiHandLandmarks.length===0){
+        targetOpen = 0;
+        return;
+    }
+    const lm = results.multiHandLandmarks[0];
+    const wrist = lm[0];
+    const thumbTip = lm[4];
+    const indexTip = lm[8];
+    const midTip = lm[12];
+    const ringTip = lm[16];
+    const pinkyTip = lm[20];
+    const dists = [
+        getDist(wrist, thumbTip),
+        getDist(wrist, indexTip),
+        getDist(wrist, midTip),
+        getDist(wrist, ringTip),
+        getDist(wrist, pinkyTip)
+    ];
+    const avg = dists.reduce((a,b)=>a+b,0)/dists.length;
+    const isOpen = avg > 0.21;
+
+    targetOpen = isOpen ? 1 : 0;
+    // 翻开瞬间触发彩带
+    if(isOpen && !lastOpenState){
+        burstRibbons();
+    }
+    lastOpenState = isOpen;
+}
+function getDist(a,b){
+    const dx = a.x - b.x;
+    const dy = a.y - b.y;
+    const dz = a.z - b.z;
+    return Math.sqrt(dx*dx + dy*dy + dz*dz);
+}
+
+// ===================== 动画循环 =====================
+const clock = new THREE.Clock();
+function animate(){
+    requestAnimationFrame(animate);
+    const dt = clock.getDelta();
+
+    // 平滑插值开合
+    openProgress += (targetOpen - openProgress) * 3.2 * dt;
+    // 贺卡翻转动画：前盖向上翻
+    cardFront.rotation.x = openProgress * Math.PI * 0.98;
+
+    controls.update();
+    updateRibbons(dt);
+    composer.render();
+}
+
+function onResize(){
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    composer.setSize(window.innerWidth, window.innerHeight);
+}
+
+// ===================== 音频 =====================
+function loadAudio(){
+    audio = new Audio("https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3");
+    // 替换为生日歌资源，这里是占位；你可以换成Happy Birthday音频链接
+    audio.volume = 0.6;
+}
+
+// ===================== 启动 =====================
+(async function start(){
+    initThree();
+    loadAudio();
+    await initHandPose();
+    animate();
+})();
+</script>
+</body>
+</html>
