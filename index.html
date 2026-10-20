@@ -17,11 +17,12 @@ body{overflow:hidden;background:#080503;font-family:Arial,sans-serif;color:#fff}
 <video id="video" autoplay playsinline></video>
 <div id="tip">Open your palm to open card | Close fist to close card</div>
 
-<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/js/postprocessing/EffectComposer.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/js/postprocessing/RenderPass.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/js/controls/OrbitControls.js"></script>
+<!-- ========== 重点：锁定 three r140（兼容旧全局脚本） ========== -->
+<script src="https://cdn.jsdelivr.net/npm/three@0.140.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.140.0/examples/js/postprocessing/EffectComposer.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.140.0/examples/js/postprocessing/RenderPass.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.140.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.140.0/examples/js/controls/OrbitControls.js"></script>
 
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
@@ -201,7 +202,6 @@ function updateRibbons(dt){
         h.position.z += h.userData.vz;
         h.rotation.x += 0.06;
         h.rotation.y += 0.08;
-        h.userData.vy -= 0.0025;
         h.material.opacity = h.userData.life;
         h.material.transparent = true;
     })
@@ -291,7 +291,6 @@ function onResize(){
 // ===================== 音频 =====================
 function loadAudio(){
     audio = new Audio("https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3");
-    // 替换为生日歌资源，这里是占位；你可以换成Happy Birthday音频链接
     audio.volume = 0.6;
 }
 
